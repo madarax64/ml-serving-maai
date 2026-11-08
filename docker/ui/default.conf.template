@@ -1,0 +1,36 @@
+# nginx config template. The official nginx image substitutes ${API_HOST} and
+# ${API_PORT} from the container's environment when it starts.
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Images arrive as base64 inside JSON, so bodies are several MB.
+    # nginx's default limit (1m) would reject them with HTTP 413.
+    client_max_body_size 64m;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # The browser calls /api/predict on this same origin (so no CORS is needed);
+    # nginx forwards it to http://API_HOST:API_PORT/predict.
+    location /api/ {
+        # Docker's embedded DNS. Resolving at request time (not at startup) lets
+        # this container start and survive restarts even if the API isn't up yet.
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $api_upstream http://${API_HOST}:${API_PORT};
+
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $api_upstream;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+}
