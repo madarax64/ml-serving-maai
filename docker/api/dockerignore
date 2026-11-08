@@ -1,0 +1,9 @@
+# Keep the build context tiny
+*.jpg
+*.jpeg
+*.png
+*.json
+__pycache__/
+.git/
+client.py
+infer.py
