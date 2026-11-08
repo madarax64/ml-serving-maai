@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Object Detector</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1b1f24;
+    --muted: #667085;
+    --border: #e1e4ea;
+    --track: #e9ecf1;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --danger: #b42318;
+    --danger-bg: #fef3f2;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --card: #181c22;
+      --text: #e8eaed;
+      --muted: #9aa4b2;
+      --border: #2a313b;
+      --track: #2a313b;
+      --accent: #5b8def;
+      --accent-text: #0b0f14;
+      --danger: #ff8a80;
+      --danger-bg: #2a1614;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 14px; }
+  p { margin: 4px 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  .muted { color: var(--muted); }
+  .small { font-size: .875rem; }
+
+  .layout { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  /* ---- Input half ---- */
+  .input-grid { display: grid; gap: 20px; }
+  .dropzone {
+    display: grid;
+    place-items: center;
+    min-height: 200px;
+    padding: 12px;
+    text-align: center;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.drag {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  .dropzone img { max-width: 100%; max-height: 340px; object-fit: contain; border-radius: 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .note { color: var(--danger); min-height: 1.25em; }
+
+  .controls { display: flex; flex-direction: column; gap: 18px; }
+  .field-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+  input[type=range] { width: 100%; height: 32px; margin: 4px 0; accent-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+  .btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;            /* comfortable touch target */
+    padding: 0 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: 2px;
+  }
+  .controls .btn.primary { width: 100%; }
+
+  /* ---- Results half ---- */
+  .loading { display: flex; align-items: center; gap: 10px; }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 3px solid var(--track);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+
+  .error {
+    padding: 12px;
+    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+    border-radius: 10px;
+  }
+  .result-grid { display: grid; gap: 16px; }
+  figure { margin: 0; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 10px; }
+  figcaption { margin-top: 8px; }
+  .headline { margin: 0 0 8px; font-size: 1.1rem; font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+  .chip {
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    font-size: .9rem;
+    font-weight: 600;
+  }
+  .dets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .det {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .det .name { font-weight: 600; }
+  .det .score { font-variant-numeric: tabular-nums; }
+  .bar { grid-column: 1 / -1; height: 6px; margin: 4px 0; overflow: hidden; border-radius: 999px; background: var(--track); }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .det .box { grid-column: 1 / -1; color: var(--muted); font: .8rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  pre {
+    max-height: 260px;
+    margin: 8px 0 0;
+    padding: 10px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: .8rem;
+  }
+  footer { text-align: center; padding-bottom: 8px; }
+
+  /* ---- Camera dialog ---- */
+  dialog {
+    width: min(92vw, 720px);
+    padding: 16px;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .55); }
+  dialog video { display: block; width: 100%; border-radius: 10px; background: #000; }
+
+  @media (min-width: 760px) {
+    .layout { padding: 24px; gap: 20px; }
+    .input-grid { grid-template-columns: 1.15fr 1fr; }
+    .result-grid.has-image { grid-template-columns: 1.25fr 1fr; align-items: start; }
+  }
+</style>
+</head>
+<body>
+<main class="layout">
+  <header>
+    <h1>Object detector</h1>
+    <p class="muted">Faster R-CNN (COCO) served over HTTP. Pick or take a photo, choose a confidence threshold, and run detection.</p>
+  </header>
+
+  <!-- Upper half: input -->
+  <section class="card" aria-labelledby="input-title">
+    <h2 id="input-title">1 · Input</h2>
+    <div class="input-grid">
+      <div>
+        <div id="dropzone" class="dropzone">
+          <img id="preview" alt="Preview of the selected image" hidden>
+          <p id="dropHint" class="muted">Drop an image here, or use the buttons below.</p>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" id="chooseBtn">Choose image</button>
+          <button type="button" class="btn" id="cameraBtn">Take photo</button>
+        </div>
+        <p id="fileInfo" class="muted small"></p>
+        <p id="inputNote" class="note small" role="status"></p>
+        <input id="fileInput" type="file" accept="image/*" hidden>
+        <!-- On phones, "capture" opens the camera app directly. -->
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+      </div>
+
+      <div class="controls">
+        <div>
+          <div class="field-head">
+            <label for="threshold">Confidence threshold</label>
+            <output id="thresholdOut" for="threshold">70%</output>
+          </div>
+          <input id="threshold" type="range" min="0" max="1" step="0.05" value="0.7">
+          <p class="muted small">Lower finds more objects (and more mistakes); higher keeps only confident detections.</p>
+        </div>
+        <label class="check">
+          <input id="annotate" type="checkbox">
+          <span>Return annotated image</span>
+        </label>
+        <button type="button" class="btn primary" id="detectBtn" disabled>Detect objects</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Lower half: results -->
+  <section class="card" aria-labelledby="results-title">
+    <h2 id="results-title">2 · Results</h2>
+    <div id="results" aria-live="polite"></div>
+  </section>
+
+  <footer class="muted small">
+    Requests go to <code>/api/predict</code>, which the web container forwards to the detection service.
+  </footer>
+</main>
+
+<dialog id="camDialog" aria-label="Camera">
+  <video id="camVideo" autoplay playsinline muted></video>
+  <div class="row">
+    <button type="button" class="btn primary" id="camSnap">Capture</button>
+    <button type="button" class="btn" id="camCancel">Cancel</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------- settings
+  const API_URL = "api/predict";  // relative: nginx forwards /api/* to the detection service
+  const MAX_UPLOAD_SIDE = 0;   // downscale bigger photos before upload (0 = send the original)
+  const JPEG_QUALITY = 0.8;
+
+  // ---------------------------------------------------------------- elements
+  const $ = (id) => document.getElementById(id);
+  const dropzone = $("dropzone");
+  const preview = $("preview");
+  const dropHint = $("dropHint");
+  const fileInfo = $("fileInfo");
+  const inputNote = $("inputNote");
+  const fileInput = $("fileInput");
+  const cameraInput = $("cameraInput");
+  const thresholdInput = $("threshold");
+  const thresholdOut = $("thresholdOut");
+  const annotateInput = $("annotate");
+  const detectBtn = $("detectBtn");
+  const results = $("results");
+  const camDialog = $("camDialog");
+  const camVideo = $("camVideo");
+
+  let currentFile = null;
+  let previewUrl = null;
+  let resultUrl = null;
+  let camStream = null;
+
+  // ----------------------------------------------------------------- helpers
+  // Build DOM nodes without innerHTML, so text from the server is never parsed as HTML.
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
+    return node;
+  }
+
+  const formatBytes = (n) => (n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+  function toBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const s = String(reader.result);
+        resolve(s.slice(s.indexOf(",") + 1)); // strip the "data:...;base64," prefix
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function imageMime(b64) {
+    return b64.startsWith("/9j/") ? "image/jpeg" : "image/png"; // JPEG vs PNG magic bytes
+  }
+
+  function b64ToBlobUrl(b64, mime) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  }
+
+  function setNote(text) { inputNote.textContent = text; }
+
+  // ------------------------------------------------------------ results area
+  function showEmpty(text) { results.replaceChildren(el("p", { class: "muted" }, text)); }
+  function showLoading(text) {
+    results.replaceChildren(el("div", { class: "loading" }, el("span", { class: "spinner", "aria-hidden": "true" }), text));
+  }
+  function showError(text) { results.replaceChildren(el("div", { class: "error", role: "alert" }, text)); }
+
+  function detectionRow(d) {
+    const pct = Math.round(d.score * 1000) / 10; // one decimal place
+    const [x1, y1, x2, y2] = d.box.map((c) => Math.round(c));
+    return el("li", { class: "det" },
+      el("span", { class: "name" }, d.label),
+      el("span", { class: "score" }, `${pct.toFixed(1)}%`),
+      el("span", { class: "bar", "aria-hidden": "true" }, el("span", { style: `width:${pct}%` })),
+      el("span", { class: "box" }, `x ${x1}–${x2} · y ${y1}–${y2} px`)
+    );
+  }
+
+  function showResults(data, ctx) {
+    const detections = Array.isArray(data.detections) ? data.detections : [];
+    const objects = Array.isArray(data.objects) ? data.objects : [];
+    const counts = new Map();
+    for (const d of detections) counts.set(d.label, (counts.get(d.label) || 0) + 1);
+
+    const details = el("div", {});
+    if (detections.length === 0) {
+      details.append(
+        el("p", { class: "headline" }, "No objects found"),
+        el("p", { class: "muted" }, `Nothing scored above ${Math.round(ctx.threshold * 100)}%. Try lowering the threshold.`)
+      );
+    } else {
+      const n = detections.length, k = objects.length;
+      details.append(
+        el("p", { class: "headline" }, `${n} detection${n === 1 ? "" : "s"} · ${k} object type${k === 1 ? "" : "s"}`),
+        el("div", { class: "chips" }, ...objects.map((label) =>
+          el("span", { class: "chip" }, label, counts.get(label) > 1 ? ` × ${counts.get(label)}` : null))),
+        el("ul", { class: "dets" }, ...detections.map(detectionRow))
+      );
+    }
+
+    const meta = [`Total time ${(ctx.elapsedMs / 1000).toFixed(2)} s`];
+    if (ctx.sent.width) meta.push(`analysed at ${ctx.sent.width} × ${ctx.sent.height} px`);
+    const { annotated_image, ...rest } = data; // never dump the huge image string into the JSON view
+    details.append(
+      el("p", { class: "muted small" }, meta.join(" · ")),
+      el("details", {}, el("summary", {}, "Raw JSON response"), el("pre", {}, JSON.stringify(rest, null, 2)))
+    );
+
+    let figure = null;
+    if (annotated_image) {
+      const mime = imageMime(annotated_image);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      resultUrl = b64ToBlobUrl(annotated_image, mime);
+      figure = el("figure", {},
+        el("a", { href: resultUrl, target: "_blank", rel: "noopener" },
+          el("img", { src: resultUrl, alt: "The image with detected objects outlined" })),
+        el("figcaption", {},
+          el("a", { class: "btn", href: resultUrl, download: `annotated.${mime === "image/png" ? "png" : "jpg"}` }, "Download image"))
+      );
+    } else if (ctx.wantAnnotation) {
+      details.append(el("p", { class: "muted small" }, "The server didn't return an annotated image."));
+    }
+
+    results.replaceChildren(
+      el("div", { class: "result-grid" + (figure ? " has-image" : "") }, ...(figure ? [figure, details] : [details]))
+    );
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    results.closest(".card").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }
+
+  // ------------------------------------------------------------- file input
+  function setFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setNote("That file isn't an image."); return; }
+    setNote("");
+    currentFile = file;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    preview.hidden = false;
+    dropHint.hidden = true;
+    fileInfo.textContent = `${file.name || "photo"} · ${formatBytes(file.size)}`;
+    detectBtn.disabled = false;
+    showEmpty("Press “Detect objects” to analyse this image.");
+  }
+
+  $("chooseBtn").addEventListener("click", () => fileInput.click());
+  for (const input of [fileInput, cameraInput]) {
+    input.addEventListener("change", () => {
+      setFile(input.files[0]);
+      input.value = ""; // lets the same file be picked again later
+    });
+  }
+
+  ["dragenter", "dragover"].forEach((type) => dropzone.addEventListener(type, (e) => {
+    e.preventDefault();
+    dropzone.classList.add("drag");
+  }));
+  ["dragleave", "drop"].forEach((type) => dropzone.addEventListener(type, (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("drag");
+  }));
+  dropzone.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
+  // Stop the browser from navigating to an image dropped outside the drop zone.
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  thresholdInput.addEventListener("input", () => {
+    thresholdOut.textContent = `${Math.round(Number(thresholdInput.value) * 100)}%`;
+  });
+
+  // ----------------------------------------------------------------- camera
+  // Phones/tablets: the "capture" input opens the native camera app (works over plain HTTP).
+  // Desktops: use the webcam via getUserMedia (needs https:// or localhost).
+  async function openCamera() {
+    const touch = matchMedia("(pointer: coarse)").matches;
+    const hasWebcamApi = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    if (touch || !hasWebcamApi) { cameraInput.click(); return; }
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+    } catch (err) {
+      setNote("Couldn't open the camera. Check the browser permission, or choose a file instead.");
+      return;
+    }
+    setNote("");
+    camVideo.srcObject = camStream;
+    camDialog.showModal();
+  }
+
+  function stopCamera() {
+    if (camStream) camStream.getTracks().forEach((t) => t.stop());
+    camStream = null;
+    camVideo.srcObject = null;
+  }
+
+  $("cameraBtn").addEventListener("click", openCamera);
+  $("camCancel").addEventListener("click", () => camDialog.close());
+  camDialog.addEventListener("close", stopCamera); // also covers the Esc key
+  $("camSnap").addEventListener("click", () => {
+    const w = camVideo.videoWidth, h = camVideo.videoHeight;
+    if (!w || !h) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext("2d").drawImage(camVideo, 0, 0, w, h);
+    canvas.toBlob((blob) => {
+      if (blob) setFile(new File([blob], "photo.jpg", { type: "image/jpeg" }));
+      camDialog.close();
+    }, "image/jpeg", 0.92);
+  });
+
+  // ---------------------------------------------------------------- request
+  // Shrinks big photos in the browser (faster upload) and returns base64 plus the size analysed.
+  async function prepareImage(file) {
+    let bitmap = null;
+    if (typeof createImageBitmap === "function") {
+      try { bitmap = await createImageBitmap(file); } catch (err) { bitmap = null; }
+    }
+    if (!bitmap) return { b64: await toBase64(file), width: null, height: null };
+
+    const { width, height } = bitmap;
+    const longest = Math.max(width, height);
+    if (!MAX_UPLOAD_SIDE || longest <= MAX_UPLOAD_SIDE) {
+      bitmap.close();
+      return { b64: await toBase64(file), width, height };
+    }
+
+    const scale = MAX_UPLOAD_SIDE / longest;
+    const w = Math.round(width * scale), h = Math.round(height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // JPEG has no transparency
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
+    if (!blob) return { b64: await toBase64(file), width, height };
+    return { b64: await toBase64(blob), width: w, height: h };
+  }
+
+  async function describeHttpError(response) {
+    if (response.status === 413) return "The image is too large for the server.";
+    if ([502, 503, 504].includes(response.status)) {
+      return "The detection API isn't reachable. It may still be loading the model, so try again in a moment.";
+    }
+    try {
+      const body = await response.json();
+      if (typeof body.detail === "string") return body.detail;
+      if (body.detail) return JSON.stringify(body.detail);
+    } catch (err) { /* not JSON */ }
+    return `The server returned HTTP ${response.status}.`;
+  }
+
+  function setBusy(busy) {
+    detectBtn.disabled = busy || !currentFile;
+    detectBtn.textContent = busy ? "Detecting…" : "Detect objects";
+  }
+
+  const REQUEST_TIMEOUT_MS = 90000;
+  let inFlight = null; // AbortController of the request currently running
+
+  function cancelInFlight() {
+    if (inFlight) { inFlight.abort(); inFlight = null; }
+  }
+
+  async function detect() {
+    if (!currentFile) return;
+    cancelInFlight();
+    const controller = new AbortController();
+    inFlight = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+
+    setBusy(true);
+    showLoading("Preparing image…");
+    const started = performance.now();
+    const threshold = Number(thresholdInput.value);
+    const wantAnnotation = annotateInput.checked;
+    const fileLabel = `${currentFile.name || "photo"} (${formatBytes(currentFile.size)})`;
+    try {
+      const sent = await prepareImage(currentFile);
+      if (inFlight !== controller) return;            // superseded while resizing
+      showLoading("Running detection…");
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: sent.b64, annotate: wantAnnotation, threshold }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await describeHttpError(response));
+      const data = await response.json();
+      if (inFlight !== controller) return;            // a newer request or photo took over
+      showResults(data, { sent, wantAnnotation, threshold, fileLabel, elapsedMs: performance.now() - started });
+    } catch (err) {
+      if (inFlight !== controller) return;            // superseded: stay quiet
+      if (err.name === "AbortError") {
+        showError(timedOut
+          ? "The server took too long to answer. It may be busy, so please try again."
+          : "Cancelled.");
+      } else {
+        showError(err instanceof TypeError
+          ? "Couldn't reach the server. Check your connection and that both services are running."
+          : err.message);
+      }
+    } finally {
+      clearTimeout(timer);
+      if (inFlight === controller) { inFlight = null; setBusy(false); }
+    }
+  }
+
+  detectBtn.addEventListener("click", detect);
+  showEmpty("Results will appear here once you've picked an image and run detection.");
+})();
+</script>
+</body>
+</html>
