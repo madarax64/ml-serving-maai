@@ -1,0 +1,16 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    gpus: all
+
+  web:
+    build: ./docker/ui
+    environment:
+      API_HOST: api
+      API_PORT: "24242"
+    ports:
+      - "24241:80"
+    depends_on:
+      - api
