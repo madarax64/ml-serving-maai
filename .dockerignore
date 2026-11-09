@@ -5,5 +5,3 @@
 *.json
 __pycache__/
 .git/
-client.py
-infer.py
